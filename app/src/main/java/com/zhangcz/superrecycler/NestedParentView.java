@@ -7,6 +7,7 @@ import android.support.v4.view.ViewCompat;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
 /**
@@ -18,18 +19,24 @@ import android.widget.LinearLayout;
  *
  * 1.onStartNestedScroll   ---->    onNestedScrollAccepted     ---->    onNestedPreScroll     -------------->    onNestedScroll     -------->    onStopNestedScroll
  *
+ * 1.目前支持单布局的嵌套滚动
+ * 2.正在添加带上拉刷新的的RecyclerView
  *
  */
 
 public class NestedParentView extends LinearLayout implements NestedScrollingParent {
 
-    private View mTop;
-    private int mTopHeight;
+    private View mTopScrollView;//顶部可嵌套滚动View ,默认是第一个
+    private int mTopHeight;//顶部可嵌套滚动View的height
+    private View mScrollView;//中部滚动的View
+
+    private View mFooterView;//底部下拉刷新View
+    private int mFooterHeight;//底部上啦加载footerview高度
 
     String TAG = getClass().getName();
 
     public NestedParentView(Context context) {
-        super(context);
+        this(context,null);
     }
 
     public NestedParentView(Context context, @Nullable AttributeSet attrs) {
@@ -86,7 +93,24 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
      */
     @Override
     public void onNestedScroll(View target, int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed) {
-
+        if(dyUnconsumed>0){//向上滚动有剩余 显示底部
+            showLog("向上滚动有剩余"+dyUnconsumed);
+            if(getScrollY()+dyUnconsumed>mTopHeight+mFooterHeight){
+                scrollBy(0,(mTopHeight+mFooterHeight)-getScrollY());
+            }else{
+                scrollBy(0,dyUnconsumed);
+            }
+//            scrollBy(0,dyUnconsumed);
+        }else{//向下滚动有剩余  显示头部
+            int scrollDist = 0;
+            if(getScrollY()+dyUnconsumed<0){
+                scrollDist = -getScrollY();
+            }else{
+                scrollDist = dyUnconsumed;
+            }
+            scrollBy(0,scrollDist);
+            showLog("向下滚动有剩余"+dyUnconsumed);
+        }
         showLog("onNestedScroll");
     }
 
@@ -104,24 +128,28 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
         boolean isCanHiddenTop = dy>0 && getScrollY()<mTopHeight;
         boolean isCanShowTop = dy<0 && getScrollY()>0 && ViewCompat.canScrollVertically(target,-1);
         if(isCanHiddenTop||isCanShowTop){
-            int consumedDy;
-            if(dy>0){//向下滚动
+            int consumedDy=0;
+            if(dy>0){//向上滚动 直接做隐藏头部操作  隐藏完毕就不消耗这次滚动了
                 if(getScrollY()+dy>mTopHeight){
                     consumedDy = mTopHeight-getScrollY();
                 }else{
                     consumedDy = dy;
                 }
-            }else{//向上滚动
-                if(getScrollY()+dy<0){
-                    consumedDy = -getScrollY();
-                }else{
-                    consumedDy = dy;
+                countDy += consumedDy;
+                Log.i(TAG,"---->dy"+dy);
+                Log.i(TAG,"---->getScrollY()"+getScrollY());
+                Log.i(TAG,"-------->countDy"+countDy);
+//            target.getLayoutParams().height = target.getLayoutParams().height+consumedDy;
+//            target.invalidate();
+            }else{//向下滚动 先隐藏底部.完事则,由子布局自己处理,继而再交由本布局处理,确保列表滚到第一行才移出头部,代码移动到 onNestedScroll方法中
+                if(getScrollY()>mTopHeight){
+                    if(getScrollY()+dy>mTopHeight){
+                        consumedDy = dy;
+                    }else{
+                        consumedDy = mTopHeight-getScrollY();
+                    }
                 }
             }
-            countDy += consumedDy;
-            Log.i(TAG,"---->dy"+dy);
-            Log.i(TAG,"---->getScrollY()"+getScrollY());
-            Log.i(TAG,"-------->countDy"+countDy);
             scrollBy(0,consumedDy);
             consumed[1] = consumedDy;
         }
@@ -173,16 +201,30 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
     @Override
     protected void onFinishInflate() {
         super.onFinishInflate();
-        mTop = getChildAt(0);
+        mTopScrollView = getChildAt(0);
+        mScrollView = getChildAt(getChildCount()-2);
+        mFooterView = getChildAt(getChildCount()-1);
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        if(mTop!=null){
-            mTopHeight = mTop.getMeasuredHeight();
+        if(mTopScrollView !=null){
+            mTopHeight = mTopScrollView.getMeasuredHeight();
         }else{
-            showLog("mTop cant be null");
+            showLog("mTopScrollView cant be null");
         }
+        if(mFooterView != null){
+            mFooterHeight = mFooterView.getMeasuredHeight();
+        }
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+//        getChildAt(0).measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+        ViewGroup.LayoutParams params = mScrollView.getLayoutParams();
+        params.height = getMeasuredHeight();
+        setMeasuredDimension(getMeasuredWidth(), mTopScrollView.getMeasuredHeight() + mFooterView.getMeasuredHeight() + mScrollView.getMeasuredHeight());
     }
 }
