@@ -1,5 +1,6 @@
 package com.zhangcz.superrecycler;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.support.annotation.Nullable;
 import android.support.v4.view.NestedScrollingParent;
@@ -8,6 +9,7 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.animation.LinearInterpolator;
 import android.widget.LinearLayout;
 
 /**
@@ -34,6 +36,10 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
     private int mFooterHeight;//底部上啦加载footerview高度
 
     String TAG = getClass().getName();
+
+    private ValueAnimator mOffsetAnimator;
+
+    private boolean isLoading;
 
     public NestedParentView(Context context) {
         this(context,null);
@@ -79,7 +85,14 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
      * @param target 发起这次滚动的view
      */
     @Override
-    public void onStopNestedScroll(View target) {
+    public void onStopNestedScroll(View target){
+        if (!isLoading && getScrollY()>mTopHeight+mFooterHeight/2){//不是曾在加载中,且具备加载更多的条件
+            isLoading = !isLoading;
+            showLog("执行上拉加载更多!");
+        }else if(getScrollY()>mTopHeight){//回滚隐藏底部
+            animateScroll(getScrollY(),mTopHeight,1);
+//            scrollBy(0,mTopHeight-getScrollY());
+        }
         showLog("onStopNestedScroll");
     }
 
@@ -95,20 +108,22 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
     public void onNestedScroll(View target, int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed) {
         if(dyUnconsumed>0){//向上滚动有剩余 显示底部
             showLog("向上滚动有剩余"+dyUnconsumed);
-            if(getScrollY()+dyUnconsumed>mTopHeight+mFooterHeight){
+            if(getScrollY()==mTopHeight+mFooterHeight){//底部已经显示完全不做任何操作
+
+            }else if(getScrollY()+dyUnconsumed>mTopHeight+mFooterHeight){
                 scrollBy(0,(mTopHeight+mFooterHeight)-getScrollY());
             }else{
                 scrollBy(0,dyUnconsumed);
             }
 //            scrollBy(0,dyUnconsumed);
         }else{//向下滚动有剩余  显示头部
-            int scrollDist = 0;
-            if(getScrollY()+dyUnconsumed<0){
-                scrollDist = -getScrollY();
+            if(getScrollY()==0){//头部已经显示完全,不做任何操作
+
+            }else if(getScrollY()+dyUnconsumed<0){
+                scrollBy(0,-getScrollY());
             }else{
-                scrollDist = dyUnconsumed;
+                scrollBy(0,dyUnconsumed);
             }
-            scrollBy(0,scrollDist);
             showLog("向下滚动有剩余"+dyUnconsumed);
         }
         showLog("onNestedScroll");
@@ -150,8 +165,10 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
                     }
                 }
             }
-            scrollBy(0,consumedDy);
-            consumed[1] = consumedDy;
+            if(consumedDy!=0){//等于0时没必要滚动
+                scrollBy(0,consumedDy);
+                consumed[1] = consumedDy;
+            }
         }
         showLog("onNestedPreScroll");
     }
@@ -226,5 +243,29 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
         ViewGroup.LayoutParams params = mScrollView.getLayoutParams();
         params.height = getMeasuredHeight();
         setMeasuredDimension(getMeasuredWidth(), mTopScrollView.getMeasuredHeight() + mFooterView.getMeasuredHeight() + mScrollView.getMeasuredHeight());
+    }
+
+    /**
+     * 根据设定执行动画滚动此view
+     * @param from 从哪个坐标
+     * @param to 滚动到哪个坐标
+     * @param speed 要滚动的速度
+     */
+    private void animateScroll(int from,int to,final int speed) {
+//        if (mOffsetAnimator == null) {
+            mOffsetAnimator = new ValueAnimator();
+            mOffsetAnimator.setInterpolator(new LinearInterpolator());
+            mOffsetAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                @Override
+                public void onAnimationUpdate(ValueAnimator animation) {
+                    if (animation.getAnimatedValue() instanceof Integer) {
+                        scrollTo(0, (Integer) animation.getAnimatedValue());
+                    }
+                }
+            });
+//        }
+        mOffsetAnimator.setDuration(Math.abs((from-to)/speed)*4);
+        mOffsetAnimator.setIntValues(from, to);
+        mOffsetAnimator.start();
     }
 }
