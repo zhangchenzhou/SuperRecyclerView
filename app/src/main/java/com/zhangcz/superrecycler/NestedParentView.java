@@ -32,14 +32,24 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
     private int mTopHeight;//顶部可嵌套滚动View的height
     private View mScrollView;//中部滚动的View
 
-    private View mFooterView;//底部下拉刷新View
+    private FooterView mFooterView;//底部下拉刷新View
     private int mFooterHeight;//底部上啦加载footerview高度
+    private int safeHeight = 0;
 
     String TAG = getClass().getName();
 
     private ValueAnimator mOffsetAnimator;
 
     private boolean isLoading;
+
+    private int currntState = 0;
+    public static final int STATE_INIT = 0;//初始状态
+    public static final int STATE_RELASELOADMORE = 1;//释放刷新
+    public static final int STATE_LOADING = 2;//加载中
+    public static final int STATE_DATANONE = 3;//数据为空
+    public static final int STATE_NOMORE = 4;//没有更多
+
+    private OnLoadMoreListener mLoadMoreListener;
 
     public NestedParentView(Context context) {
         this(context,null);
@@ -86,11 +96,14 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
      */
     @Override
     public void onStopNestedScroll(View target){
-        if (!isLoading && getScrollY()>mTopHeight+mFooterHeight/2){//不是曾在加载中,且具备加载更多的条件
+        if (!isLoading && getScrollY()>mTopHeight+safeHeight){//不是曾在加载中,且具备加载更多的条件
             isLoading = !isLoading;
+            setFooterViewStates(STATE_LOADING);
+            mLoadMoreListener.onLoadMore();
             showLog("执行上拉加载更多!");
         }else if(getScrollY()>mTopHeight){//回滚隐藏底部
-            animateScroll(getScrollY(),mTopHeight,1);
+            setFooterViewStates(STATE_INIT);
+            hiddenFooterView();
 //            scrollBy(0,mTopHeight-getScrollY());
         }
         showLog("onStopNestedScroll");
@@ -114,6 +127,10 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
                 scrollBy(0,(mTopHeight+mFooterHeight)-getScrollY());
             }else{
                 scrollBy(0,dyUnconsumed);
+            }
+
+            if(getScrollY()>mTopHeight+safeHeight){
+                setFooterViewStates(STATE_RELASELOADMORE);
             }
 //            scrollBy(0,dyUnconsumed);
         }else{//向下滚动有剩余  显示头部
@@ -142,7 +159,8 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
     public void onNestedPreScroll(View target, int dx, int dy, int[] consumed) {
         boolean isCanHiddenTop = dy>0 && getScrollY()<mTopHeight;
         boolean isCanShowTop = dy<0 && getScrollY()>0 && ViewCompat.canScrollVertically(target,-1);
-        if(isCanHiddenTop||isCanShowTop){
+        boolean isCanHidenFooter = getScrollY()>mTopHeight;
+        if(isCanHiddenTop||isCanShowTop||isCanHidenFooter){
             int consumedDy=0;
             if(dy>0){//向上滚动 直接做隐藏头部操作  隐藏完毕就不消耗这次滚动了
                 if(getScrollY()+dy>mTopHeight){
@@ -163,6 +181,10 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
                     }else{
                         consumedDy = mTopHeight-getScrollY();
                     }
+                    if(getScrollY()<mTopHeight+safeHeight){
+                        setFooterViewStates(STATE_INIT);
+                    }
+                    showLog("-------------------------->向下滚动,隐藏底部");
                 }
             }
             if(consumedDy!=0){//等于0时没必要滚动
@@ -220,7 +242,7 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
         super.onFinishInflate();
         mTopScrollView = getChildAt(0);
         mScrollView = getChildAt(getChildCount()-2);
-        mFooterView = getChildAt(getChildCount()-1);
+        mFooterView = (FooterView) getChildAt(getChildCount()-1);
     }
 
     @Override
@@ -233,6 +255,7 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
         }
         if(mFooterView != null){
             mFooterHeight = mFooterView.getMeasuredHeight();
+            safeHeight = mFooterHeight * 2 /3;
         }
     }
 
@@ -252,7 +275,7 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
      * @param speed 要滚动的速度
      */
     private void animateScroll(int from,int to,final int speed) {
-//        if (mOffsetAnimator == null) {
+        if (mOffsetAnimator == null) {
             mOffsetAnimator = new ValueAnimator();
             mOffsetAnimator.setInterpolator(new LinearInterpolator());
             mOffsetAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
@@ -263,9 +286,54 @@ public class NestedParentView extends LinearLayout implements NestedScrollingPar
                     }
                 }
             });
-//        }
+        }
         mOffsetAnimator.setDuration(Math.abs((from-to)/speed)*4);
         mOffsetAnimator.setIntValues(from, to);
         mOffsetAnimator.start();
     }
+
+    private void setFooterViewStates(int state){//设置底部footer通用状态的view
+        if(currntState == state || ( isLoading && state != STATE_LOADING)){
+            return ;
+        }else{
+            currntState = state;
+        }
+        switch (state){
+            case STATE_INIT:
+                mFooterView.onInit();
+                break;
+            case STATE_RELASELOADMORE:
+                mFooterView.onRelaseLoadMore();
+                break;
+            case STATE_LOADING:
+                mFooterView.onLoading();
+                break;
+            case STATE_DATANONE:
+                mFooterView.onDataNone();
+                break;
+            case STATE_NOMORE:
+                mFooterView.onNoMore();
+                break;
+        }
+    }
+
+    public interface OnLoadMoreListener{
+        void onLoadMore();
+    }
+
+    //加载更多完成时调用,用来改变FooterView状态及性状
+    public void setLoadMoreFinish(int state){
+        isLoading = false;
+        setFooterViewStates(state);
+        hiddenFooterView();
+    }
+
+    private void hiddenFooterView(){
+        animateScroll(getScrollY(),mTopHeight,1);
+    }
+
+    public void setLoadMoreListener(OnLoadMoreListener loadMoreListener){
+        this.mLoadMoreListener = loadMoreListener;
+    }
+
 }

@@ -6,6 +6,7 @@
     android:layout_height="match_parent">
 
     <LinearLayout
+        android:id="@id/id_topview"
         android:layout_width="match_parent"
         android:layout_height="100px">
         <TextView
@@ -22,6 +23,7 @@
         android:layout_height="match_parent"
         />
     <com.zhangcz.superrecycler.FooterView
+        android:id="@id/id_footer"
         android:layout_width="match_parent"
         android:layout_height="120px"/>
 </com.zhangcz.superrecycler.NestedParentView>
